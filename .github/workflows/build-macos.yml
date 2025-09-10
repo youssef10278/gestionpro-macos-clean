@@ -20,14 +20,48 @@ jobs:
       with:
         node-version: '18'
         cache: 'npm'
-        
+
+    - name: Setup Python and build tools
+      run: |
+        # Install Python setuptools (includes distutils)
+        python3 -m pip install --upgrade pip setuptools wheel
+
+        # Alternative: Install distutils explicitly if needed
+        python3 -m pip install distutils-extra || true
+
+        # Verify Python setup
+        python3 --version
+        python3 -c "import distutils; print('✅ distutils available')" || echo "⚠️ distutils not found, trying alternative..."
+
+        # Fallback: Use system Python if available
+        if ! python3 -c "import distutils" 2>/dev/null; then
+          echo "Installing build essentials..."
+          # On macOS, ensure Xcode command line tools are available
+          xcode-select --install 2>/dev/null || true
+        fi
+
     - name: Install dependencies
       run: |
         npm ci
         
     - name: Rebuild native modules for macOS
       run: |
-        npm run rebuild
+        echo "🔧 Rebuilding native modules for macOS..."
+
+        # Set environment variables for native compilation
+        export CC=clang
+        export CXX=clang++
+        export PYTHON=python3
+
+        # Rebuild native modules
+        npm run rebuild || {
+          echo "⚠️ npm run rebuild failed, trying alternative..."
+          npx electron-rebuild --force || {
+            echo "⚠️ electron-rebuild failed, trying manual rebuild..."
+            npm rebuild better-sqlite3 --build-from-source
+            npm rebuild bcrypt --build-from-source
+          }
+        }
         
     - name: Build CSS
       run: |
