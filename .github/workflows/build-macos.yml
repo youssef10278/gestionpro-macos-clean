@@ -15,30 +15,31 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
       
+    - name: Setup Python (with distutils)
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
         node-version: '18'
         cache: 'npm'
 
-    - name: Setup Python and build tools
+    - name: Install Python build dependencies
       run: |
-        # Install Python setuptools (includes distutils)
-        python3 -m pip install --upgrade pip setuptools wheel
+        python -m pip install --upgrade pip setuptools wheel
+        python -c "import distutils; print('✅ Python distutils available')"
 
-        # Alternative: Install distutils explicitly if needed
-        python3 -m pip install distutils-extra || true
+    - name: Setup build environment
+      run: |
+        # Ensure Xcode command line tools are available
+        xcode-select --install 2>/dev/null || echo "Xcode tools already installed"
 
-        # Verify Python setup
-        python3 --version
-        python3 -c "import distutils; print('✅ distutils available')" || echo "⚠️ distutils not found, trying alternative..."
-
-        # Fallback: Use system Python if available
-        if ! python3 -c "import distutils" 2>/dev/null; then
-          echo "Installing build essentials..."
-          # On macOS, ensure Xcode command line tools are available
-          xcode-select --install 2>/dev/null || true
-        fi
+        # Set environment variables for native compilation
+        echo "CC=clang" >> $GITHUB_ENV
+        echo "CXX=clang++" >> $GITHUB_ENV
+        echo "PYTHON=$(which python)" >> $GITHUB_ENV
 
     - name: Install dependencies
       run: |
@@ -47,20 +48,14 @@ jobs:
     - name: Rebuild native modules for macOS
       run: |
         echo "🔧 Rebuilding native modules for macOS..."
+        echo "Python path: $(which python)"
+        echo "Node version: $(node --version)"
+        echo "npm version: $(npm --version)"
 
-        # Set environment variables for native compilation
-        export CC=clang
-        export CXX=clang++
-        export PYTHON=python3
-
-        # Rebuild native modules
+        # Try npm rebuild first
         npm run rebuild || {
-          echo "⚠️ npm run rebuild failed, trying alternative..."
-          npx electron-rebuild --force || {
-            echo "⚠️ electron-rebuild failed, trying manual rebuild..."
-            npm rebuild better-sqlite3 --build-from-source
-            npm rebuild bcrypt --build-from-source
-          }
+          echo "⚠️ npm run rebuild failed, trying electron-rebuild..."
+          npx electron-rebuild --force --verbose
         }
         
     - name: Build CSS
@@ -80,7 +75,13 @@ jobs:
         
     - name: Build macOS app
       run: |
-        npm run build:mac
+        echo "🚀 Building macOS application..."
+        npm run build:mac || {
+          echo "⚠️ Build failed, trying without rebuild..."
+          # Skip rebuild and try direct build
+          npm run build-css
+          npx electron-builder --mac --publish=never
+        }
         
     - name: List build output
       run: |
