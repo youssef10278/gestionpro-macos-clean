@@ -1,0 +1,95 @@
+name: Build macOS App
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+
+jobs:
+  build-macos:
+    runs-on: macos-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        
+    - name: Install dependencies
+      run: |
+        npm ci
+        
+    - name: Rebuild native modules for macOS
+      run: |
+        npm run rebuild
+        
+    - name: Build CSS
+      run: |
+        npm run build-css
+        
+    - name: Create clean database
+      run: |
+        # Vérifier que la base de données vierge existe
+        if [ -f "database/main-clean.db" ]; then
+          echo "✅ Base de données vierge trouvée"
+        else
+          echo "⚠️ Création d'une base de données vierge"
+          mkdir -p database
+          touch database/main-clean.db
+        fi
+        
+    - name: Build macOS app
+      run: |
+        npm run build:mac
+        
+    - name: List build output
+      run: |
+        echo "📁 Contenu du dossier dist:"
+        ls -la dist/ || echo "Pas de dossier dist"
+        echo ""
+        echo "📁 Recherche des fichiers .app:"
+        find . -name "*.app" -type d || echo "Aucun .app trouvé"
+        
+    - name: Upload macOS App
+      uses: actions/upload-artifact@v4
+      with:
+        name: GestionPro-macOS-${{ github.sha }}
+        path: |
+          dist/mac/
+          dist/*.app
+        retention-days: 30
+        
+    - name: Create Release Info
+      run: |
+        echo "# 🍎 GestionPro pour macOS" > RELEASE_INFO.md
+        echo "" >> RELEASE_INFO.md
+        echo "## 📦 Installation" >> RELEASE_INFO.md
+        echo "1. Téléchargez l'archive ci-dessous" >> RELEASE_INFO.md
+        echo "2. Décompressez-la" >> RELEASE_INFO.md
+        echo "3. Glissez GestionPro.app vers Applications" >> RELEASE_INFO.md
+        echo "4. Double-cliquez pour lancer" >> RELEASE_INFO.md
+        echo "" >> RELEASE_INFO.md
+        echo "## 🔑 Connexion initiale" >> RELEASE_INFO.md
+        echo "- **Utilisateur:** proprietaire" >> RELEASE_INFO.md
+        echo "- **Mot de passe:** admin" >> RELEASE_INFO.md
+        echo "" >> RELEASE_INFO.md
+        echo "## ⚠️ Sécurité macOS" >> RELEASE_INFO.md
+        echo "Si macOS bloque l'app:" >> RELEASE_INFO.md
+        echo "1. Allez dans Préférences Système > Sécurité" >> RELEASE_INFO.md
+        echo "2. Cliquez 'Ouvrir quand même' pour GestionPro" >> RELEASE_INFO.md
+        echo "" >> RELEASE_INFO.md
+        echo "**Version:** $(node -p "require('./package.json').version")" >> RELEASE_INFO.md
+        echo "**Build:** ${{ github.sha }}" >> RELEASE_INFO.md
+        
+    - name: Upload Release Info
+      uses: actions/upload-artifact@v4
+      with:
+        name: Release-Info-${{ github.sha }}
+        path: RELEASE_INFO.md
+        retention-days: 30
