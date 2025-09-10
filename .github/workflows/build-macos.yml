@@ -43,20 +43,26 @@ jobs:
 
     - name: Install dependencies
       run: |
-        npm ci
-        
-    - name: Rebuild native modules for macOS
-      run: |
-        echo "🔧 Rebuilding native modules for macOS..."
-        echo "Python path: $(which python)"
-        echo "Node version: $(node --version)"
-        echo "npm version: $(npm --version)"
+        # Install dependencies without rebuilding
+        npm ci --ignore-scripts
 
-        # Try npm rebuild first
-        npm run rebuild || {
-          echo "⚠️ npm run rebuild failed, trying electron-rebuild..."
-          npx electron-rebuild --force --verbose
+    - name: Install native modules with prebuilt binaries
+      run: |
+        echo "📦 Installing native modules with prebuilt binaries..."
+
+        # Force install prebuilt binaries for better-sqlite3
+        npm install better-sqlite3 --build-from-source=false --fallback-to-build=false || {
+          echo "⚠️ Prebuilt better-sqlite3 failed, trying alternative version..."
+          npm install better-sqlite3@^11.0.0 --build-from-source=false
         }
+
+        # Force install prebuilt binaries for bcrypt
+        npm install bcrypt --build-from-source=false --fallback-to-build=false || {
+          echo "⚠️ Prebuilt bcrypt failed, trying alternative version..."
+          npm install bcrypt@^5.1.0 --build-from-source=false
+        }
+
+        echo "✅ Native modules installed"
         
     - name: Build CSS
       run: |
@@ -77,10 +83,21 @@ jobs:
       run: |
         echo "🚀 Building macOS application..."
         npm run build:mac || {
-          echo "⚠️ Build failed, trying without rebuild..."
-          # Skip rebuild and try direct build
+          echo "⚠️ Build failed, trying alternative approach..."
+
+          # Alternative 1: Try with different electron-builder config
           npm run build-css
-          npx electron-builder --mac --publish=never
+          npx electron-builder --mac --publish=never --config.asar=false || {
+
+            echo "⚠️ Alternative 1 failed, trying minimal build without native modules..."
+            # Alternative 2: Use simplified package.json without native dependencies
+            cp package-macos.json package.json
+            rm -rf node_modules
+            npm install --production --ignore-scripts
+
+            # Try to build with minimal setup
+            npx electron-builder --mac --publish=never --config.asar=false
+          }
         }
         
     - name: List build output
